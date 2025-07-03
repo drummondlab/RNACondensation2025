@@ -21,7 +21,7 @@ library(ggforce)
 library(ggrastr)
 library(devtools)
 #devtools::install_github("jabard89/cat.extras")
-library(cat.extras) #has nicely formatted log scales
+#library(cat.extras) #has nicely formatted log scales
 library(flextable)
 library(patchwork)
 library(FlexParamCurve)

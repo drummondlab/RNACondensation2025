@@ -1,0 +1,668 @@
+---
+title: "Figure bashing"
+author: "D. Allan Drummond"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+`
+# Setup
+## libraries, colors, labels and functions
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message = FALSE, warning = FALSE)
+knitr::asis_output("\U0394  \U2192")
+library(tidyverse)
+library(conflicted)
+library(corrr)
+library(cowplot)
+library(readxl)
+library(egg)
+library(ggsignif)
+library(ggrepel)
+library(ggforce)
+library(ggrastr)
+library(devtools)
+#devtools::install_github("jabard89/cat.extras")
+#library(cat.extras) #has nicely formatted log scales
+library(flextable)
+library(patchwork)
+library(FlexParamCurve)
+library(zoo)
+library(here)
+`%!in%` = Negate(`%in%`)
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::summarise)
+github_dir <- here::here()
+
+source(file.path(github_dir,"scripts_processing/utilityFunctions.R"))
+
+# set theme
+
+theme_sedseq <- function(base_size=10) {
+  theme_grey(base_size=base_size, base_family = "") %+replace%
+    theme(panel.grid=element_blank(),
+          axis.text = element_text(size = base_size),
+          strip.text.x = element_text(size = base_size, margin = margin(t = 10)),
+          strip.text.y = element_text(size = base_size, margin = margin(r = 10)),
+          panel.background=element_blank(),
+          axis.ticks=element_line(colour="grey20"),
+          panel.border=element_rect(fill=NA),
+          legend.background = element_blank(),
+          legend.key.height = unit(3, "mm"),
+          legend.key = element_blank(),
+          strip.background = element_blank(),
+          legend.box.spacing = unit(1, "mm"))
+}
+theme_set(theme_sedseq(base_size=10))
+
+gray50col = "#7F7F7F"
+graycol <- "#333333cc"
+orangecol <- "#cc5500cc"
+goldcol <- "#d4aa00cc"
+bluecol <- "#0000aacc"
+greencol <- "#22cc00cc"
+purplecol <- "#cc22cccc"
+cyancol <- "#2aa198cc"
+redcol <- "#dc322fcc"
+violetcol <- "#6c71c4cc"
+blackcol <- "#000000ff"
+
+okabe_ito_colors <- palette.colors(n = NULL, palette = "Okabe-Ito", recycle = FALSE)
+
+stress.cols <-  c("30C"="#7F7F7F",
+                  "42C"=RColorBrewer::brewer.pal(n=7,"Oranges")[4],
+                  "46C"=RColorBrewer::brewer.pal(n=7,"Oranges")[6],
+                  "mock"="#7F7F7F",
+                  "Azide 0.5%"=RColorBrewer::brewer.pal(n=5,"Greens")[3],
+                  "Azide 0.8%"=RColorBrewer::brewer.pal(n=5,"Greens")[5],
+                  "Ethanol 5%"=RColorBrewer::brewer.pal(n=7,"Purples")[3],
+                  "Ethanol 7.5%"=RColorBrewer::brewer.pal(n=7,"Purples")[5],
+                  "Ethanol 10%"=RColorBrewer::brewer.pal(n=7,"Purples")[6],
+                  "Ethanol 15%"=RColorBrewer::brewer.pal(n=7,"Purples")[7],
+                  "DTT" = okabe_ito_colors[8])
+stress.cols.darker <- c("30C"="#7F7F7F",
+                  "42C"=RColorBrewer::brewer.pal(n=7,"Oranges")[4],
+                  "46C"="red")
+species.cols <- c("Scerevisiae"="#7F7F7F",
+                  "Spombe"=purplecol)
+
+induction.cols <- c("New"=purplecol,
+                "Old"="grey20")
+
+cat.cols <- c("down" = RColorBrewer::brewer.pal(12,"Paired")[10],
+              "up" = RColorBrewer::brewer.pal(12,"Paired")[4])
+
+target.cols <- c("HSF1 targets"= "#DDAA33",
+                 "MSN2/4 targets"="#BB5566" )
+
+
+stress_labs <- c("30C"="30°C","42C"="42°C","46C"="46°C","mock"="mock",
+                 "Azide 0.5%"="0.5% Azide","Azide 0.8%"="0.8% Azide",
+                 "Ethanol 5%"="5% EtOH","Ethanol 7.5%"="7.5% EtOH","Ethanol 10%"="10% EtOH","Ethanol 15%"="15% EtOH")
+label.levels <- c("other","glycolysis","ribosomal proteins","ribosome biogenesis","MSN2/4 targets","HSF1 targets")
+label.cols <- c("other"="grey50",
+                "ribosomal proteins"=palette.colors(palette="Paired")[2],
+                "ribosome biogenesis"=palette.colors(palette="Paired")[10],
+                "MSN2/4 targets"=palette.colors(palette="Paired")[8],
+                "HSF1 targets"=palette.colors(palette="Paired")[6])
+
+
+sg_enrichment_colors = c('enriched'=orangecol, 'depleted'=violetcol, 'neither'=graycol)
+all_cols <- c(stress.cols,sg_enrichment_colors,graycol,orangecol,bluecol,greencol,purplecol,
+              cyancol,redcol,violetcol,blackcol)
+# make gimp palette
+
+# Write to GPL file
+gpl_file <- file.path(github_dir,"figures/RNA-condensation.gpl")
+
+# Open the file for writing
+con <- file(gpl_file, "w")
+
+# Write the header and name
+cat("GIMP Palette\n", file=con)
+cat(paste("Name:", "RNA-condensation"), "\n", file=con)
+# Convert hex codes to R G B format and write
+for (i in 1:length(all_cols)) {
+  col_rgb <- col2rgb(all_cols[i])
+  cat(col_rgb[1], col_rgb[2], col_rgb[3], "   ", names(all_cols)[i], "\n", file=con)
+}
+
+# Close the connection
+close(con)
+# Shape and alpha for points
+shap = 16
+alph = 0.3
+
+# Larger labels for smaller subpanels
+larger_labels = theme(
+  axis.title.x = element_text(size = 14),
+  axis.text.x = element_text(size = 14),
+  axis.title.y = element_text(size = 14),
+  axis.text.y = element_text(size = 14))
+
+geom_cross <- function(data = NULL, grouping= NULL,
+                       x = NULL, y = NULL, qmin = 0.25, qmax = 0.75, color = "black", ...){
+  label <- sym(grouping)
+  # Ensure x and y are specified
+  if(is.null(x) | is.null(y)) {
+    stop("Please specify x and y variables.")
+  }
+  
+  # Calculate the cross data for each label group
+  df_label_sum <- data %>% 
+    group_by(!!label) %>% 
+    summarise(
+      x_med = median(!!sym(x), na.rm = TRUE),
+      x_min = quantile(!!sym(x), qmin, na.rm = TRUE),
+      x_max = quantile(!!sym(x), qmax, na.rm = TRUE),
+      y_med = median(!!sym(y), na.rm = TRUE),
+      y_min = quantile(!!sym(y), qmin, na.rm = TRUE),
+      y_max = quantile(!!sym(y), qmax, na.rm = TRUE)
+    )
+  geoms <- list()
+  
+  for (label_val in unique(df_label_sum %>% pull(!!label))) {
+    df_subset <- df_label_sum %>% filter(!!label == label_val)
+    if (is.null(color)) {
+      geoms <- append(geoms, list(
+        geom_errorbar(inherit.aes = FALSE, data = df_subset,
+                      aes(x = x_med, ymin = y_min, ymax = y_max,color=!!label),
+                      width=0,
+                      size = 1),
+        geom_errorbar(inherit.aes = FALSE, data = df_subset,
+                      aes(y = y_med, xmin = x_min, xmax = x_max,color=!!label),
+                      width=0,
+                      size = 1)
+      ))
+    }
+    else {
+      geoms <- append(geoms, list(
+        geom_errorbar(inherit.aes = FALSE, data = df_subset,
+                      aes(x = x_med, ymin = y_min, ymax = y_max),
+                      color=color,
+                      width=0,
+                      size = 1),
+        geom_errorbar(inherit.aes = FALSE, data = df_subset,
+                      aes(y = y_med, xmin = x_min, xmax = x_max),
+                      color=color,
+                      width=0,
+                      size = 1)
+      ))
+    }
+  }
+  return(geoms)
+}
+
+plot_density_x <- function(df,var,scale,min,max,cols,alph=0.5,siz=0.25,fill="top100"){
+  X <- sym(var)
+  fil <- sym(fill)
+  if (scale%in%c("log2","log10")){
+    p <- ggplot(df,aes(x=log10(!!X),fill=!!fil))+
+      geom_density(alpha=alph,size=siz)+
+      scale_fill_manual(values=cols)+
+      theme_void()+
+      guides(fill="none")+
+      scale_x_continuous(limits=c(log10(min)-1,log10(max)+1))+
+      coord_cartesian(xlim=c(log10(min),log10(max)),expand=F)
+  } else{
+    p <- ggplot(df,aes(x=!!X,fill=!!fil))+
+      geom_density(alpha=alph,size=siz)+
+      scale_fill_manual(values=cols)+
+      theme_void()+
+      guides(fill="none")+
+      scale_x_continuous(limits=c(min-1,max+1))+
+      coord_cartesian(xlim=c(min,max),expand=F)
+  }
+  return(p)
+}
+
+plot_density_y <- function(df,var,scale,min,max,cols,alph=0.5,siz=0.25,fill="top100"){
+  X <- sym(var)
+  fil <- sym(fill)
+  if (scale%in%c("log2","log10")){
+    p <- ggplot(df,aes(x=log10(!!X),fill=!!fil))+
+      geom_density(alpha=alph,size=siz)+
+      scale_fill_manual(values=cols)+
+      scale_x_continuous(limits=c(log10(min)-1,log10(max)+1))+
+      theme_void()+
+      guides(fill="none")+
+      coord_flip(xlim=c(log10(min),log10(max)))
+  } else{
+    p <- ggplot(df,aes(x=!!X,fill=!!fil))+
+      geom_density(alpha=alph,size=siz)+
+      scale_fill_manual(values=cols)+
+      theme_void()+
+      guides(fill="none")+
+      scale_x_continuous(limits=c(min-1,max+1))+
+      coord_flip(xlim=c(min,max))
+  }
+  return(p)
+}
+
+no.legend = theme(legend.position="none")
+
+# annotations
+
+# annotations are built by src/annotations/label_genes.Rmd
+
+# gene_labels <- read_tsv(file.path(github_dir,"src/annotations/labeled_genes_scer.tsv")) %>%
+#   dplyr::mutate(length.trans = LengthTxEst) %>%
+#   select(ORF,gene,classification,label,LengthTxEst,length.protein)
+gene_labels <- read_tsv(file.path(github_dir,"src/annotations/labeled_genes_scer.tsv")) %>%
+  dplyr::mutate(label=case_when(label=="RiBi"~"ribosome biogenesis",
+                                label=="translation factors"~"other",
+                                label=="RP"~"other",
+                                label=="glycolysis"~"other",
+                                label=="HSF1"~"HSF1 targets",
+                                label=="MSN2/4"~"MSN2/4 targets",
+                                TRUE~label)) %>%
+  dplyr::mutate(label=factor(label,levels=label.levels)) %>%
+  dplyr::mutate(length.trans = LengthTxEst) %>%
+  select(ORF,gene,classification,label,LengthTxEst,length.protein)
+
+
+## load data
+
+df_Zsup_Poly_minfilt <- read_tsv(file.path(github_dir,"data_processed/df_Zsup_Poly_minfilt.tsv.gz"))
+
+df_samples_byLysate <- read_tsv(file.path(github_dir,"data_raw","RNAseq_samples_byLysate.tsv"))
+
+df_stress_samples <- read_csv(file.path(github_dir,"data_raw/stress_labels.csv")) %>%
+  mutate(Stress=factor(Stress,levels=c("none","Heat Shock","Azide","Ethanol","DTT")),
+         Stress_label=factor(Stress_label,levels=c("none","30C","42C","46C",
+                                                   "mock","Azide 0.5%","Azide 0.8%",
+                                                   "Ethanol 5%","Ethanol 7.5%","Ethanol 10%","Ethanol 15%",
+                                                   "DTT 10mM")))
+
+df_Zsup_mean = read_tsv(file.path(github_dir, "data_processed/sedseq_filt_mean.tsv.gz")) |>
+  left_join(df_samples_byLysate |> 
+              select(Treatment_group,Treatment,Temperature,Time) |> unique(),
+              by=c("Treatment","Treatment_group","Temperature")) |>
+  left_join(gene_labels |> select(-LengthTxEst), by='ORF')
+
+df_Occ_mean_minfilt <- read_tsv(file.path(github_dir,
+                                          "data_processed/PolySeq_minfilt_mean.tsv.gz")) %>%
+  left_join(df_stress_samples,by=c("Temperature","Treatment_group","Treatment")) %>%
+  filter(!is.na(Control)) %>%
+  group_by(Treatment_group,ORF) %>%
+  filter(length(ORF[Control==TRUE])==1) %>%
+  mutate(Occ.odds.FC = Occ.odds.mean/Occ.odds.mean[Control==TRUE])
+
+
+df_Weinberg <- read_tsv(file.path(github_dir,"src/Weinberg_2016/weinberg_shah_synthesis_2016.txt"),
+                       comment="#") %>%
+  mutate(TE = TE/median(TE,na.rm=T)) %>%
+  select(ORF,TE,pE)
+
+muhl = read_tsv(file.path(github_dir,"src/Muhlhofer_2019/Muhlhofer_2019_rnaseq.tsv"), comment='#') |> pivot_wider(values_from = TPM, names_from=sample, names_prefix = 'tpm.')
+
+#normalized protein (not yet normalized by RNA to get TE)
+df_hairpin_reporters <- read_csv(file.path(github_dir,"data_processed/df_hairpin_DAD.csv")) %>%
+  mutate(Strain = paste0("y", Strain)) %>%
+  group_by(Strain,mfe) %>%
+  summarise("Clover"=mean(normalizedClover),
+            "mCherry"=mean(normalizedmCherry)) %>% 
+  select(Strain,mfe,Clover,mCherry)
+
+#normalized protein (not yet normalized by RNA to get TE)
+df_uorfs <- read_delim(file.path(github_dir,"data_processed/20201206_dataAnalyzedExport.txt"),delim=" ") %>% 
+  separate(Sample,into=c("Strain","Biorep","Tech"),sep="_") %>%
+  mutate(
+    Biorep = ifelse(Strain == "BY4742", "A", 
+                    ifelse(Strain == "yHG010", "A", Biorep)),
+    Tech = ifelse(Strain == "BY4742", 1, 
+                  ifelse(Strain == "yHG010", 1, Tech))) %>% 
+  filter(Strain %in% c('yHG010','yHG026','yHG027')) %>%
+  group_by(Strain) %>%
+  summarise(Clover=mean(Clover_corrected),
+            mCherry = mean(mCherry_corrected))
+
+df_agg = read_tsv(file.path(github_dir,"src/scer_aggregation_psup.txt"), comment='#') |> rename(ORF=orf) |> rowwise() |>
+  mutate(pSup.30C=mean(c(psup_30C.rep1,psup_30C.rep2,psup_30C.rep3), na.rm=T)) |>
+  rename(pSup.42C=psup_42C.8min, pSup.46C=psup_46C.8min) |> 
+  select(ORF, gene, pSup.30C, pSup.42C, pSup.46C) |> 
+  pivot_longer(cols=c(pSup.30C, pSup.42C, pSup.46C), names_prefix = "pSup.") |> 
+  rename(Temperature=name, pSup=value)
+
+
+```
+
+## Figure 1D (pSup vs. length)
+```{r fig1_psup_vs_length, dependson="setup", fig.asp=0.5, cache=TRUE}
+df = df_Zsup_mean |> filter(Treatment_group=='EW_TSPP') |> filter(Temperature != '42CR') |> mutate(length=LengthTxEst)
+
+focal_genes = c('PMU1','HSP104')
+foci = df |> filter(gene %in% focal_genes)# & Temperature != '46C')
+
+control_gene = 'PMU1'
+overview_focal = c('PMU1')
+overview_foci = df |> filter(gene %in% overview_focal)
+mark_bounds = c(0.05, 0.98)
+
+length_marks = unlist(unique(df |> filter(gene %in% focal_genes) |> select(length)))
+mark_alpha = 0.4
+
+df30 = df |> filter(Temperature=='30C')
+ctrl_dat = df |> filter(gene==control_gene, Temperature=='42C')
+ctrl_gene_length = unlist(ctrl_dat$length)
+ctrl_gene_pSup = unlist(df |> filter(gene==control_gene, Temperature=='42C') |> select(pSup.mean))
+effective_ctrl_length = unlist(df |> filter(pSup.ctrl.window.mean.mean>0.995*ctrl_gene_pSup & pSup.ctrl.window.mean.mean<(1/0.995)*ctrl_gene_pSup) |> select(gene, length) |> summarise(ml=mean(length)))
+
+g_data = ggplot(df, aes(x=length, y=pSup.mean, group=Temperature, colour=Temperature)) + 
+  ggrastr::rasterize(geom_point(shape=shap, alpha=alph), dpi=600) + 
+  geom_line(aes(y=pSup.treatment.window.mean.mean, group=Temperature), linewidth=0.5, linetype=1, colour=blackcol, alpha=0.5) +
+  scale_colour_manual(values=stress.cols) + no.legend +
+  #geom_hline(data=overview_foci, yintercept = overview_foci[2:3,]$pSup, linetype="11", alpha=0.5) +
+#  ggplot2::annotate("segment", x=ctrl_gene_length, y=ctrl_gene_pSup, xend=effective_ctrl_length, yend=ctrl_gene_pSup, linetype="11") +
+#  ggplot2::annotate("segment", x=effective_ctrl_length, y=ctrl_gene_pSup, xend=effective_ctrl_length, yend=-0.2, linetype="11") +
+#  ggplot2::annotate("point", x=effective_ctrl_length, y=ctrl_gene_pSup, colour="black", shape=16, size=1) +
+#  geom_point(data=overview_foci, size=2, colour=blackcol) + 
+#  geom_point(data=overview_foci, size=1) + 
+  coord_cartesian(ylim=c(0,1)) +
+  scale_x_log10nice("mRNA length (nucleotides)") + ylab("Proportion in supernatant (pSup)")
+
+# Introducing sed
+trans = odds
+g_trans = ggplot(df, aes(x=length, y=trans(pSup.mean), group=Temperature, colour=Temperature)) + 
+  #geom_hline(yintercept=trans(mark_bounds), alpha=mark_alpha, colour=blackcol, linetype=2) +
+  geom_vline(xintercept = length_marks, alpha=mark_alpha, linetype=1, colour=blackcol) +
+  ggrastr::rasterize(geom_point(shape=shap, alpha=0.2*alph),dpi=600) + 
+  geom_line(aes(y=trans(pSup.treatment.window.mean.mean), group=Temperature), linewidth=0.5, linetype=1, colour=blackcol, alpha=0.7) +
+  geom_line(data=df30, aes(y=exp(logodds(pSup.ctrl.window.mean.mean)+lopSup.treatment.sd.mean), group=Temperature), linewidth=0.5, linetype=3, colour=blackcol, alpha=0.7) +
+  geom_line(data=df30, aes(y=exp(logodds(pSup.ctrl.window.mean.mean)-lopSup.treatment.sd.mean), group=Temperature), linewidth=0.5, linetype=3, colour=blackcol, alpha=0.7) +
+  scale_colour_manual(values=stress.cols) + no.legend +
+  geom_point(data=foci, size=2, colour=blackcol) + 
+  geom_point(data=foci, size=1) + 
+  coord_cartesian(ylim=trans(mark_bounds)) +
+  scale_x_log10nice("mRNA length (nucleotides)") + scale_y_log10nice("Odds in supernatant (pSup odds)")
+
+p_data_and_logodds = g_data + g_trans
+p_data_and_logodds
+
+fig.asp = 1/2
+fig.width = 210*0.7
+fig.vs.panel.ratio = 1/0.7
+
+ggsave(file.path(github_dir, "figures/bashing/psup-vs-length.pdf"), 
+       #egg::set_panel_size(p_data_and_logodds, width = unit(fig.width, "mm"), height = unit(fig.width*fig.asp, "mm")),
+       p_data_and_logodds,
+       width = fig.width*fig.vs.panel.ratio, 
+       height = fig.width*fig.asp*fig.vs.panel.ratio, 
+       units = "mm", bg = "transparent", create.dir=TRUE)
+
+```
+
+## Figure 1H (pSup with model comparison)
+```{r fig_theory_psup, dependson="fig1_psup_vs_length"}
+df = df_Zsup_mean |> filter(Treatment_group=='EW_TSPP') |> filter(Temperature != '42CR') |> mutate(length=LengthTxEst)
+
+theory_colors = c("30C"=stress.cols[["30C"]],
+                              "42C"=stress.cols[["42C"]],"46C"=stress.cols[["46C"]],
+                              "30C.line"="black","42C.line"="#d65e09",
+                              "46C.line"=redcol)
+
+logit = function(p) { log(p / (1 - p)) }
+invlogit = function (x) { 1 / (1 + exp(-x)) }
+
+fit_data = df |> filter(pSup.mean>0)
+
+nls_fit_30C_noclust <-
+  nls(lopSup ~ logit(1 - beta_param * length^chi_param),
+      data = fit_data |>
+        filter(Temperature == '30C') |>
+        mutate(lopSup = logit(pSup.mean)),
+      start = list(beta_param = 1e-5, chi_param = 1))
+
+beta_fit <- coef(nls_fit_30C_noclust)["beta_param"]
+chi_fit  <- coef(nls_fit_30C_noclust)["chi_param"]
+
+#summary(nls_fit_30C_noclust)
+
+nls_fit_42C <-
+  nls(lopSup ~ logit( (1 - beta_fit * length^chi_fit) * exp( - mu_param - nu_param * length) ),
+      data = fit_data |>
+        filter(Temperature == '42C') |>
+        mutate(lopSup = logit(pSup.mean)),
+      start = list(mu_param = 1e-5, nu_param = 1e-5))
+
+mu_fit_42C <- coef(nls_fit_42C)["mu_param"]
+nu_fit_42C  <- coef(nls_fit_42C)["nu_param"]
+
+#summary(nls_fit_42C)
+
+
+nls_fit_46C <-
+  nls(lopSup ~ logit( (1 - beta_fit * length^chi_fit) * exp( - mu_param - nu_param * length) ),
+      data = fit_data |>
+        filter(Temperature == '46C') |>
+        mutate(lopSup = logit(pSup.mean)),
+      start = list(mu_param = 1e-5, nu_param = 1e-5))
+
+mu_fit_46C <- coef(nls_fit_46C)["mu_param"]
+nu_fit_46C  <- coef(nls_fit_46C)["nu_param"]
+
+#summary(nls_fit_46C)
+
+
+nls_fitnuonly_42C <-
+  nls(lopSup ~ logit( (1 - beta_fit * length^chi_fit) * exp( - nu_param * length) ),
+      data = fit_data |>
+        filter(Temperature == '42C') |>
+        mutate(lopSup = logit(pSup.mean)),
+      start = list(nu_param = 1e-5))
+
+nuonly_fit_42C  <- coef(nls_fitnuonly_42C)["nu_param"]
+
+#summary(nls_fitnuonly_42C)
+
+nls_fitnuonly_46C <-
+  nls(lopSup ~ logit( (1 - beta_fit * length^chi_fit) * exp( - nu_param * length) ),
+      data = fit_data |>
+        filter(Temperature == '46C') |>
+        mutate(lopSup = logit(pSup.mean)),
+      start = list(nu_param = 1e-5))
+
+nuonly_fit_46C  <- coef(nls_fitnuonly_46C)["nu_param"]
+
+# Fit statistics
+
+fit_wide = fit_data |> rename(pSup=pSup.treatment.window.mean.mean) |> pivot_wider(id_cols = c(ORF, length), values_from=pSup, names_from=Temperature, names_prefix = "pSup.")
+#fit_wide = fit_data |> rename(pSup=pSup.mean) |> pivot_wider(id_cols = c(ORF, length), values_from=pSup, names_from=Temperature, names_prefix = "pSup.")
+
+psup_curve = function(length, beta, chi, mu, nu, baseline=0.0) {
+  res = sapply(length, function(L) {
+    baseline + exp(-mu)*exp(-nu*L)*max(1-beta*L^chi,0)
+  })
+  res
+}
+
+fit_enh = fit_wide |> mutate(
+  pse.30C=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = 0, baseline=0),
+  pse.42C=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = mu_fit_42C, nu = nu_fit_42C, baseline=0),
+  pse.46C=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = mu_fit_46C, nu = nu_fit_46C, baseline=0),
+  pse.42C.nomu=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = nuonly_fit_42C, baseline=0),
+  pse.46C.nomu=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = nuonly_fit_46C, baseline=0))
+
+# rmse_30 = with(fit_enh, sqrt(sum((pse.30C-pSup.30C)^2, na.rm=T)/(nrow(fit_enh)-2)))
+# rmse_42 = with(fit_enh, sqrt(sum((pse.42C-pSup.42C)^2, na.rm=T)/(nrow(fit_enh)-2)))
+# rmse_46 = with(fit_enh, sqrt(sum((pse.46C-pSup.46C)^2, na.rm=T)/(nrow(fit_enh)-2)))
+# rmse_42_nomu = with(fit_enh, sqrt(sum((pse.42C.nomu-pSup.42C)^2, na.rm=T)/(nrow(fit_enh)-1)))
+# rmse_46_nomu = with(fit_enh, sqrt(sum((pse.46C.nomu-pSup.46C)^2, na.rm=T)/(nrow(fit_enh)-1)))
+# RMSE goodness of fit: root mean squared error, where denominator is number of datapoints N - number of estimated parameters M
+# rmse_30 = with(fit_enh, sqrt(sum((logodds(pse.30C)-logodds(pSup.30C))^2, na.rm=T)/(nrow(fit_enh)-2)))
+# rmse_42 = with(fit_enh, sqrt(sum((logodds(pse.42C)-logodds(pSup.42C))^2, na.rm=T)/(nrow(fit_enh)-2)))
+# rmse_46 = with(fit_enh, sqrt(sum((logodds(pse.46C)-logodds(pSup.46C))^2, na.rm=T)/(nrow(fit_enh)-2)))
+# rmse_42_nomu = with(fit_enh, sqrt(sum((logodds(pse.42C.nomu)-logodds(pSup.42C))^2, na.rm=T)/(nrow(fit_enh)-1)))
+# rmse_46_nomu = with(fit_enh, sqrt(sum((logodds(pse.46C.nomu)-logodds(pSup.46C))^2, na.rm=T)/(nrow(fit_enh)-1)))
+# 
+# rmse_42/rmse_42_nomu
+# rmse_46/rmse_46_nomu
+
+# Build results table
+fit_table = tibble(
+  Temperature=c('30C','42C','46C', '42C ($nu$ only)', '46C ($nu$ only)'),
+  beta = c(paste(format(beta_fit, digits=3)),'"', '"', '"', '"'),
+  chi = c(paste(format(chi_fit, digits=3)),'"', '"', '"', '"'),
+  mu=c("NA",paste(format(mu_fit_42C, digits=3)), paste(format(mu_fit_46C, digits=3)),"0", "0"),
+  nu=c("NA",paste(format(nu_fit_42C, digits=3, sci=F)), paste(format(nu_fit_46C, digits=3)), paste(format(nuonly_fit_42C, digits=3)), paste(format(nuonly_fit_46C, digits=3))),
+  #fit.rmse=c(paste(format(rmse_30, digits=3, sci=F)), paste(format(rmse_42, digits=3, sci=F)), paste(format(rmse_46, digits=3))),
+  #fit.rmse.nomu.rel=c(paste(format(1.0, digits=3, sci=F)),paste(format(rmse_42_nomu/rmse_42, digits=3, sci=F)), paste(format(rmse_46_nomu/rmse_46, digits=3))),
+# L.equiv = length at which observed nu generates same probability of interaction as observed mu
+  L.equiv=c("NA",paste(round(mu_fit_42C/nu_fit_42C, digits=0)), paste(round(mu_fit_46C/nu_fit_46C, digits=0)),"NA","NA"),
+  P.L.equiv=c("NA",paste(format(1-ecdf(fit_enh$length)(mu_fit_42C/nu_fit_42C), digits=3)),paste(format(1-ecdf(fit_enh$length)(mu_fit_46C/nu_fit_46C), digits=3)),"NA","NA")
+)
+
+# F-test for nested models:
+ftest42 = extraF.nls(nls_fitnuonly_42C, nls_fit_42C)
+ftest46 = extraF.nls(nls_fitnuonly_46C, nls_fit_46C)
+
+
+lengths = 10^seq(log10(300),log10(15000), length.out=1000)
+
+# Theory
+
+s_nlsfit =
+  list('30C' =
+         tibble(length=lengths,
+                pSup.mean=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = 0, baseline=0),
+                Temperature='30C.line'),
+       '42C' =
+         tibble(length=lengths,
+                pSup.mean=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = mu_fit_42C, nu = nu_fit_42C, baseline=0),
+                Temperature='42C.line'),
+       '46C' =
+         tibble(length=lengths,
+                pSup.mean=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = mu_fit_46C, nu = nu_fit_46C, baseline=0),
+                Temperature='46C.line')
+  )
+sx_nlsfit = bind_rows(s_nlsfit)
+
+s_nlsfit.nomu =
+    list('30C' =
+         tibble(length=lengths,
+                pSup.mean=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = 0, baseline=0),
+                Temperature='30C.line'),
+       '42C' =
+         tibble(length=lengths,
+                pSup.mean=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = nuonly_fit_42C, baseline=0),
+                Temperature='42C.line'),
+       '46C' =
+         tibble(length=lengths,
+                pSup.mean=psup_curve(length, beta = beta_fit, chi = chi_fit, mu = 0, nu = nuonly_fit_46C, baseline=0),
+                Temperature='46C.line')
+  )
+sx_nlsfit.nomu = bind_rows(s_nlsfit.nomu)
+
+ranklength = df |> filter(Temperature=='30C');
+ranklength = ranklength |> mutate(rl=rank(length)/nrow(ranklength)) |> select(gene, length, rl)
+lower_length = median(unlist(ranklength |> filter(rl>0.0099 & rl<0.011) |> select(length)),na.rm=T) # |(rl<0.99&rl>0.989)) |> arrange(desc(rl))
+upper_length = median(unlist(ranklength |> filter(rl>0.989 & rl<0.991) |> select(length)),na.rm=T) # |(rl<0.99&rl>0.989)) |> arrange(desc(rl))
+p_fit_vs_psup = ggplot(df, aes(x=length, y=pSup.mean, group=Temperature, colour=Temperature)) +
+  ggrastr::rasterize(geom_point(shape=shap, alpha=0.2*alph),dpi=600) +
+  #geom_point(shape=shap, alpha=0.2*alph) +
+  geom_vline(xintercept = upper_length, alpha=0.1) + geom_vline(xintercept = lower_length, alpha=0.1) +
+  geom_line( aes(y=pSup.treatment.window.mean.mean, group=Temperature), linewidth=1, linetype=1, colour=blackcol, alpha=0.1) +
+  geom_line(data=df |> filter(length>=lower_length, length<=upper_length), aes(y=pSup.treatment.window.mean.mean, group=Temperature), linewidth=1, linetype=1, colour=blackcol, alpha=0.5) +
+  geom_line(data=sx_nlsfit, linewidth=1.3, lty=1, alpha=0.8) +
+  geom_line(data=sx_nlsfit.nomu, linewidth=1.3, linetype='11', alpha=0.8) +
+  scale_colour_manual(values=theory_colors) + no.legend +
+  #geom_hline(yintercept=(mark_bounds), alpha=mark_alpha, colour=blackcol, linetype=2) +
+  coord_cartesian(ylim=c(0,1)) +
+  scale_y_continuous("Proportion in supernatant (pSup)", breaks=c(0,0.5,1)) +
+  scale_x_log10nice("mRNA length (nucleotides)") + larger_labels
+
+p_fit_vs_psup
+
+fig.asp = 7/7
+fig.width = 97
+fig.vs.panel.ratio = 1/0.7
+
+ggsave(file.path(github_dir, "figures/bashing/all-fits-plus-nonu.pdf"),
+       egg::set_panel_size(p_fit_vs_psup, width = unit(fig.width, "mm"), height = unit(fig.width*fig.asp, "mm")),
+       width = fig.width*fig.vs.panel.ratio,
+       height = fig.width*fig.asp*fig.vs.panel.ratio,
+       units = "mm", bg = "transparent", create.dir=TRUE)
+```
+
+## Figure 1F/G (sed vs. length, escape vs. length)
+```{r fig_hs_vs_sed_and_esc, dependson="fig1_psup_vs_length", fig.asp=0.9, fig.height=4}
+df = df_Zsup_mean |> filter(Treatment_group=='EW_TSPP') |> filter(Temperature != '42CR') |> mutate(length=LengthTxEst)
+res = df |> filter(Temperature=='42C') #res_hs #bind_rows(res_hs10, res_hs20)
+
+theme_marginal = theme(
+  axis.title.y = element_blank(), 
+  axis.text.y = element_blank(), 
+  axis.ticks.y = element_blank(),
+  axis.title.x = element_blank(),
+  axis.text.x = element_blank(), 
+  axis.ticks.x = element_blank(), 
+  plot.margin = unit(c(1,1,0,0),'cm'),
+  panel.margin = unit(c(0,0,0,0),'null'),
+  panel.border=element_blank(),
+  legend.position = "none",
+  axis.ticks.length = unit(0, "null"),
+  axis.ticks.margin = unit(0, "null"),
+  legend.margin = unit(0, "null")
+)
+
+add_marginal_x = function(the_plot, var, category, reverse=FALSE) {
+  ymarg = ggplot(the_plot$data, aes(x=!!rlang::sym(var), fill=!!rlang::sym(category))) + 
+    geom_density(alpha=0.6) + xlim(limits=ggplot_build(the_plot)$layout$get_scales(1)$y$limits) + 
+    coord_flip() + theme_marginal + scale_fill_manual(values=c("other"=blackcol, "focal"=orangecol))
+  if (reverse) {
+    ymarg = ymarg + scale_x_reverse(limits=-ggplot_build(the_plot)$layout$get_scales(1)$y$limits)
+  }
+  #if (!is_null(scale_colour)) {
+  #  ymarg = ymarg |> scale_colour()
+  #}
+  wrap_plots(
+    the_plot + theme(panel.spacing.x=unit(0,'cm')), ymarg, nrow = 1, design="11112"
+  )
+}
+
+hsf1 = res |> filter(label %in% c('HSF1 targets'))
+control_set = res |> filter(gene %in% c('PMU1'))
+foc = res |> filter(gene %in% c('SSA4','HSP104','PMU1'))
+
+focal = bind_rows(hsf1 |> mutate(cat="focal"), control_set |> mutate(cat="control"))
+focal_label = focal |> filter(gene %in% c('SSA4','HSP104','PMU1','ADD66'))
+res = res |> mutate(cat=ifelse(gene %in% focal$gene,"focal", "other"))
+gsed = ggplot(res, aes(x=length, y=sed.mean, fill=cat)) + theme(plot.margin=unit(c(1,0,1,1),'cm')) +
+  geom_hline(yintercept = 0, linetype=3) +
+  ggrastr::rasterize(geom_point(shape=shap, alpha=0.3, colour=gray50col),dpi=600) + 
+  #geom_point(shape=shap, alpha=0.3, colour=gray50col) + 
+  #geom_point(data=focal, shape=21, stroke=0.25, fill=orangecol, size=2) +
+  geom_point(data=focal_label, shape=21, stroke=0.25, size=3) +
+  geom_text_repel(data=focal_label, aes(label=gene), colour=blackcol, fill='white', force=2) +
+  #scale_colour_manual(values=list("other"=blackcol, "focal"="#ee7700cc", "control"=violetcol)) +
+  scale_fill_manual(values=list("other"=blackcol, "focal"=orangecol, "control"=blackcol)) +
+  scale_x_log10nice("mRNA length (nucleotides)") +
+  scale_y_continuous("Differential sedimentation (SDs)", limits=c(-0.5,7)) + no.legend
+gsed = add_marginal_x(gsed, "sed.mean", "cat", reverse=F)
+gesc = ggplot(res, aes(x=length, y=esc.mean, fill=cat)) + 
+  theme(plot.margin=unit(c(1,0,1,1),'cm'), 
+        panel.margin=unit(c(0,0,0,0),'null'),
+        legend.margin=unit(0,'null')) +
+  geom_hline(yintercept = 0, linetype=3) +
+  ggrastr::rasterize(geom_point(shape=shap, alpha=0.3, colour=gray50col),dpi=600) + 
+  #geom_point(data=focal, shape=21, stroke=0.25, fill=orangecol, size=2) +
+  geom_point(data=focal_label, shape=21, stroke=0.25, size=3) +
+  geom_text_repel(data=focal_label, aes(label=gene), colour=blackcol, fill="white", force=10, maxoverlaps=0) +
+  scale_fill_manual(values=list("other"=blackcol, "focal"=orangecol, "control"=blackcol)) +
+  scale_x_log10nice("mRNA length (nucleotides)") + 
+  scale_y_continuous("Escape score (SDs)", limits=c(-2,4)) + no.legend
+gesc = add_marginal_x(gesc, "esc.mean", "cat") # = ggMarginal(gesc, margins="y", groupColour=T, type="density")
+gsedesc = gsed / gesc
+gsedesc
+#ggsave("../figures/figure_1g.pdf", gsedesc, height=6, width=7)
+fig.asp = 7.5/7
+fig.width = 97
+fig.vs.panel.ratio = 1/0.7
+
+ggsave(file.path(github_dir, "figures/bashing/sed-esc-vs-length-nohsf.pdf"), 
+       #egg::set_panel_size(p_data_and_logodds, width = unit(fig.width, "mm"), height = unit(fig.width*fig.asp, "mm")),
+       gsedesc,
+       width = fig.width*fig.vs.panel.ratio, 
+       height = fig.width*fig.asp*fig.vs.panel.ratio, 
+       units = "mm", bg = "transparent", create.dir=TRUE)
+```
