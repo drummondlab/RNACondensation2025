@@ -1,2 +1,2 @@
-# RNA_Condensation_2024
-Repository for all scripts to analyze and make figures from data in Glauninger, Bard, Wong Hickernell et al 2024
+# RNACondensation2025
+Repository for all scripts to analyze and make figures from data in Glauninger, Bard, Wong Hickernell, et al. Molecular Cell 2025
